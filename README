@@ -1,0 +1,186 @@
+# Pneumonia Detection using CNN + TFLite Deployment
+
+## Overview
+
+This project implements a **Convolutional Neural Network (CNN)** to classify chest X-ray images into:
+
+* **NORMAL**
+* **PNEUMONIA**
+
+The project includes:
+
+* Model training and evaluation
+* Threshold optimization for balanced classification
+* Model quantization to **TFLite (INT8)** for deployment
+* Image prediction using both Keras and TFLite models
+
+---
+
+## Project Structure
+
+```
+FinalProjCS7830/
+│
+├── src/
+│   ├── 01_prepare_data.py
+│   ├── 02_train_baseline.py
+│   ├── 03_evaluate_baseline.py
+│   ├── 04_threshold_analysis.py
+│   ├── 05_quantize_tflite.py
+│   ├── 06_predict_image.py
+│   ├── 07_predict_tflite.py
+│   └── config.py
+│
+├── models/
+│   ├── baseline.keras
+│   ├── int8.tflite
+│   ├── best_threshold.json
+│   └── test_threshold_analysis.png
+│
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Setup Instructions
+
+### 1. Create Virtual Environment and activate it
+
+```bash
+py -3.10 -m venv .venv
+.\.venv\Scripts\activate
+```
+if you have an error of windows unable to run because running scripts is
+disabled and you are working in powershell. You will need to run this:
+a. Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+then
+b. Y
+### 2. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## How to Run the Project
+
+### Step 1: Prepare Data
+
+```bash
+python src/01_prepare_data.py
+```
+
+### Step 2: Train CNN Model
+
+```bash
+python src/02_train_baseline.py
+```
+
+### Step 3: Evaluate Model
+
+```bash
+python src/03_evaluate_baseline.py
+```
+
+### Step 4: Threshold Optimization
+
+This step finds the best threshold for **balanced accuracy**
+```bash
+python src/04_threshold_analysis.py
+```
+
+### Step 5: Convert Model to TFLite (INT8)
+
+```bash
+python src/05_quantize_tflite.py
+```
+
+---
+
+## Making Predictions
+
+### Using Keras Model
+
+```bash
+python src/06_predict_image.py <image_path>
+```
+
+Example:
+
+```bash
+python src/06_predict_image.py data/versions/2/chest_xray/chest_xray/test/NORMAL/IM-0001-0001.jpeg
+python src/06_predict_image.py data/versions/2/chest_xray/test/PNEUMONIA/person85_bacteria_423.jpeg
+```
+
+---
+
+### Using TFLite Model (Deployment)
+
+```bash
+python src/07_predict_tflite.py <image_path>
+```
+
+---
+
+## Model Performance
+
+* **Accuracy**: ~83%
+* **Recall (Pneumonia)**: ~99%
+* **Balanced Accuracy**: ~90% (after threshold tuning)
+* **AUC**: ~0.96+
+
+Threshold optimization significantly improved performance on imbalanced data.
+
+---
+
+## ⚡ Key Features
+
+* CNN-based image classification
+* Threshold tuning for balanced performance
+* ROC and threshold visualization
+* INT8 quantization for lightweight deployment
+* Support for real-time inference (TFLite)
+
+---
+
+## Key Concepts Used
+
+* Convolutional Neural Networks (CNN)
+* Binary classification
+* Class imbalance handling
+* Threshold tuning
+* Model quantization (TensorFlow Lite)
+
+---
+
+
+## Tested Environment
+
+* Python 3.10
+* TensorFlow 2.15
+* Windows OS
+
+---
+
+## 👤 Author
+
+**Ifedayo Fasakin Olaobi**
+**Chi Asobo Fonkam**
+**Dilean Munoz Cabrera**
+
+---
+
+## Final Remarks
+
+This project demonstrates a complete deep learning pipeline:
+from **data preprocessing → model training → evaluation → optimization → deployment**
+
+It highlights the importance of:
+
+* proper evaluation metrics
+* handling class imbalance
+* optimizing decision thresholds
+
+---
