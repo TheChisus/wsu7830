@@ -10,10 +10,11 @@ THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")
 
 
 def load_image(path):
+    # Load and resize to the same dimensions used during training (IMG_SIZE)
     img = tf.keras.utils.load_img(path, target_size=IMG_SIZE)
     arr = tf.keras.utils.img_to_array(img)
-    arr = np.expand_dims(arr, axis=0)
-    arr = tf.cast(arr, tf.float32)
+    arr = np.expand_dims(arr, axis=0)  # Add batch dimension → shape (1, H, W, 3)
+    arr = tf.cast(arr, tf.float32)     # MobileNetV2 preprocess_input expects float32
     return arr
 
 
@@ -48,7 +49,7 @@ def main():
     pred = 1 if prob >= threshold else 0
 
     print("Threshold Used:", threshold)
-    print("Prediction:", CLASS_NAMES[pred])
+    print("Prediction:", CLASS_NAMES[pred])     # "NORMAL" or "PNEUMONIA"
     print("Probability:", f"{prob:.4f}")
 
     if pred == 1:

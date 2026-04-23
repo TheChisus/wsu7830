@@ -5,7 +5,7 @@ import tensorflow as tf
 from config import DATA_DIR, IMG_SIZE, BATCH_SIZE, MODELS_DIR, SEED
 
 KERAS_MODEL_PATH = os.path.join(MODELS_DIR, "baseline.keras")
-THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")
+THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")    # Written by 02_train_baseline.py
 
 
 def safe_divide(a, b):
@@ -18,7 +18,7 @@ def load_test_dataset():
         image_size=IMG_SIZE,
         batch_size=BATCH_SIZE,
         label_mode="binary",
-        shuffle=False,
+        shuffle=False,      # Should stay False so label order matches prediction order
     )
     class_names = test_ds.class_names
     test_ds = test_ds.prefetch(tf.data.AUTOTUNE)
@@ -26,6 +26,8 @@ def load_test_dataset():
 
 
 def collect_labels_and_probs(model, ds):
+    # Collect ground-truth labels by iterating the dataset before predicting,
+    # since model.predict() returns probabilities without labels.
     labels = []
     for _, y in ds:
         labels.extend(y.numpy().flatten())
@@ -48,10 +50,10 @@ def compute_metrics(labels, preds, probs):
 
     accuracy = safe_divide(tp + tn, tp + tn + fp + fn)
     precision = safe_divide(tp, tp + fp)
-    recall = safe_divide(tp, tp + fn)
-    specificity = safe_divide(tn, tn + fp)
+    recall = safe_divide(tp, tp + fn)               # Sensitivity: correct PNEUMONIA detections
+    specificity = safe_divide(tn, tn + fp)          # Correct NORMAL identifications
     f1 = safe_divide(2 * precision * recall, precision + recall)
-    balanced_accuracy = 0.5 * (recall + specificity)
+    balanced_accuracy = 0.5 * (recall + specificity)  # Key metric for imbalanced data
 
     auc_metric = tf.keras.metrics.AUC()
     auc_metric.update_state(labels, probs)
@@ -90,6 +92,7 @@ def print_metrics(title, metrics):
 
 
 def load_threshold():
+    # Fall back to 0.5 if the threshold file from training is missing
     if os.path.exists(THRESHOLD_FILE):
         with open(THRESHOLD_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -109,11 +112,13 @@ def main():
     print("\nCollecting test predictions...")
     test_labels, test_probs = collect_labels_and_probs(model, test_ds)
 
+    # Apply the validation-tuned threshold instead of the default 0.5
     test_preds = (test_probs >= threshold).astype(int)
     test_metrics = compute_metrics(test_labels, test_preds, test_probs)
 
     print_metrics("Test Metrics at Saved Threshold", test_metrics)
 
+    # Spot-check a few individual predictions for qualitative review
     print("\nSample Predictions")
     for i in range(min(10, len(test_probs))):
         print(

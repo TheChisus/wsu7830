@@ -14,13 +14,13 @@ from config import (
     MODELS_DIR,
 )
 
-INITIAL_LEARNING_RATE = 1e-3
-FINE_TUNE_LEARNING_RATE = 1e-5
-FINE_TUNE_EPOCHS = 3
+INITIAL_LEARNING_RATE = 1e-3   # Used while the MobileNetV2 base is frozen
+FINE_TUNE_LEARNING_RATE = 1e-5 # Much smaller LR to avoid destroying pretrained weights
+FINE_TUNE_EPOCHS = 3           # Additional epochs with top layers unfrozen
 
 # reduce over-predicting pneumonia
 ALPHA = 0.50
-GAMMA = 2.0
+GAMMA = 2.0                    # Focuses loss on hard / misclassified examples
 
 THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")
 THRESHOLD_SWEEP_FILE = os.path.join(MODELS_DIR, "threshold_sweep.json")
@@ -38,6 +38,12 @@ def list_image_files(folder):
 
 
 def stratified_split():
+    # Split the training folder into train/val while preserving class ratios.
+
+    # Since the chest X-ray dataset is imbalanced (~3.9× more PNEUMONIA than NORMAL),
+    # a random split will be unrepresentative of the validation set. Using tratified split
+    # ensure each class is shuffled independently before slicing VAL_SPLIT off the top.
+    
     normal_folder = os.path.join(DATA_DIR, "train", "NORMAL")
     pneumonia_folder = os.path.join(DATA_DIR, "train", "PNEUMONIA")
 
@@ -57,6 +63,7 @@ def stratified_split():
     val_pneumonia = pneumonia_files[:n_pneumonia_val]
     train_pneumonia = pneumonia_files[n_pneumonia_val:]
 
+    # Labels: 0 = NORMAL, 1 = PNEUMONIA (matches CLASS_NAMES index in config)
     train_paths = train_normal + train_pneumonia
     train_labels = [0] * len(train_normal) + [1] * len(train_pneumonia)
 
@@ -81,6 +88,12 @@ def stratified_split():
 
 
 def make_dataset_from_paths(paths, labels, shuffle=False):
+    # Build a tf.data pipeline from file paths and float32 labels.
+
+    # The images are decoded, resized to IMG_SIZE, and cast to float32 (raw pixel
+    # values 0-255). MobileNetV2 preprocessing (scaling to [-1, 1]) is applied
+    # inside the model graph so that the same model works correctly at inference.
+
     path_ds = tf.data.Dataset.from_tensor_slices(paths)
     label_ds = tf.data.Dataset.from_tensor_slices(labels)
     ds = tf.data.Dataset.zip((path_ds, label_ds))
@@ -101,12 +114,13 @@ def make_dataset_from_paths(paths, labels, shuffle=False):
 
 
 def build_test_dataset():
+    # Test set is loaded separately (never seen during training or threshold selection)
     test_ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(DATA_DIR, "test"),
         image_size=IMG_SIZE,
         batch_size=BATCH_SIZE,
         label_mode="binary",
-        shuffle=False,
+        shuffle=False,                # Keep order deterministic for metric alignment
     )
     class_names = test_ds.class_names
     test_ds = test_ds.cache().prefetch(tf.data.AUTOTUNE)
@@ -124,16 +138,25 @@ def inspect_labels(labels, name="dataset"):
 
 
 def compute_class_weights(train_labels):
-    # Softer manual weights than the previous aggressive automatic weighting
+    # Softer manual weights than the previous aggressive automatic weighting.
+    # NORMAL gets a higher weight (1.50) to compensate for the dataset imbalance
+    # (~1,341 NORMAL vs ~3,875 PNEUMONIA in the training fold).
+
     class_weight = {
-        0: 1.50,
-        1: 0.85,
+        0: 1.50,  # NORMAL — upweighted due to fewer samples
+        1: 0.85,  # PNEUMONIA — slightly downweighted
     }
     print("Using class weights:", class_weight)
     return class_weight
 
 
 class BalancedAccuracy(tf.keras.metrics.Metric):
+    # Custom Keras metric: (Recall + Specificity) / 2.
+
+    # Primary monitor for EarlyStopping and ModelCheckpoint because
+    # plain accuracy is misleading on the imbalanced chest X-ray dataset.
+
+
     def __init__(self, name="balanced_accuracy", **kwargs):
         super().__init__(name=name, **kwargs)
         self.tp = self.add_weight(name="tp", initializer="zeros")
@@ -168,9 +191,16 @@ class BalancedAccuracy(tf.keras.metrics.Metric):
 
 
 def focal_loss(alpha=ALPHA, gamma=GAMMA):
+    # Binary focal loss — down-weights easy (high-confidence) examples.
+
+    # Standard cross-entropy treats all samples equally, which can let the
+    # majority class dominate. The modulating factor (1 - p_t)^gamma reduces
+    # the gradient contribution of well-classified samples so the model focuses
+    # on difficult / ambiguous X-rays.
+
     def loss(y_true, y_pred):
         y_true = tf.cast(y_true, tf.float32)
-        y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)     # Avoid log(0)
 
         bce = -(y_true * tf.math.log(y_pred) + (1.0 - y_true) * tf.math.log(1.0 - y_pred))
         p_t = y_true * y_pred + (1.0 - y_true) * (1.0 - y_pred)
@@ -183,6 +213,16 @@ def focal_loss(alpha=ALPHA, gamma=GAMMA):
 
 
 def build_model():
+    # Construct a MobileNetV2 transfer-learning model for binary pneumonia detection.
+
+    # Architecture:
+    #   Input → Augmentation → MobileNetV2 (frozen) → GAP → Dropout → Dense(sigmoid)
+
+    # The base is frozen initially so only the classification head is trained.
+    # fine_tune_model() later unfreezes the top 80 layers for domain adaptation.
+
+    # Light augmentation ideal for chest X-rays: flips are medically valid;
+    # rotation and zoom are kept small to avoid unrealistic distortions.
     augmentation = tf.keras.Sequential(
         [
             layers.RandomFlip("horizontal"),
@@ -192,16 +232,17 @@ def build_model():
         name="augmentation",
     )
 
+    # ImageNet-pretrained base; top (classification) layers excluded
     base = tf.keras.applications.MobileNetV2(
         input_shape=IMG_SIZE + (3,),
         include_top=False,
         weights="imagenet",
     )
-    base.trainable = False
+    base.trainable = False      # Freeze the base initially
 
     inputs = tf.keras.Input(shape=IMG_SIZE + (3,), name="input_image")
     x = augmentation(inputs)
-    x = tf.keras.applications.mobilenet_v2.preprocess_input(x)
+    x = tf.keras.applications.mobilenet_v2.preprocess_input(x)      # Scales to [-1, 1]
     x = base(x, training=False)
     x = layers.GlobalAveragePooling2D(name="gap")(x)
     x = layers.Dropout(0.40, name="dropout")(x)
@@ -217,7 +258,7 @@ def build_model():
             tf.keras.metrics.Precision(name="precision"),
             tf.keras.metrics.Recall(name="recall"),
             tf.keras.metrics.AUC(name="auc"),
-            BalancedAccuracy(),
+            BalancedAccuracy(),         # Primary monitor (see get_callbacks)
         ],
     )
 
@@ -228,6 +269,7 @@ def get_callbacks(stage_name="baseline"):
     os.makedirs(MODELS_DIR, exist_ok=True)
 
     return [
+        # Stop early if val_balanced_accuracy stops improving for 4 epochs
         tf.keras.callbacks.EarlyStopping(
             monitor="val_balanced_accuracy",
             patience=4,
@@ -242,6 +284,7 @@ def get_callbacks(stage_name="baseline"):
             min_lr=1e-7,
             verbose=1,
         ),
+         # Save only the epoch with the highest val_balanced_accuracy
         tf.keras.callbacks.ModelCheckpoint(
             filepath=os.path.join(MODELS_DIR, f"best_{stage_name}.keras"),
             monitor="val_balanced_accuracy",
@@ -253,10 +296,17 @@ def get_callbacks(stage_name="baseline"):
 
 
 def fine_tune_model(model, base, train_ds, val_ds, class_weight):
+    # Unfreeze the top 80 MobileNetV2 layers and continue training at a lower LR.
+
+    # Only the deeper layers (closer to the output) are unfrozen — they encode
+    # higher-level features that benefit most from domain adaptation to X-ray images.
+    # The very early layers (texture / edge detectors) remain frozen to preserve
+    # general low-level representations.
+    
     print("\nStarting fine-tuning...")
 
     base.trainable = True
-    for layer in base.layers[:-80]:
+    for layer in base.layers[:-80]:         # Keep early layers frozen
         layer.trainable = False
 
     model.compile(
@@ -271,6 +321,7 @@ def fine_tune_model(model, base, train_ds, val_ds, class_weight):
         ],
     )
 
+    # initial_epoch=EPOCHS continues the epoch counter from where head training stopped
     model.fit(
         train_ds,
         validation_data=val_ds,
@@ -283,6 +334,7 @@ def fine_tune_model(model, base, train_ds, val_ds, class_weight):
 
 
 def compute_roc_points(labels, probs):
+    # Manually compute TPR/FPR pairs across all unique probability thresholds.
     thresholds = np.unique(np.concatenate(([0.0], probs, [1.0])))
     thresholds = np.sort(thresholds)[::-1]
 
@@ -313,6 +365,14 @@ def compute_roc_points(labels, probs):
     return fprs, tprs, float(auc)
 
 def find_best_threshold(model, val_ds, preferred_threshold=0.745, tolerance=0.002):
+    # Select the decision threshold on the validation set.
+
+    # The search range is intentionally biased toward 0.745 because a higher threshold
+    # reduces false positives (flagging healthy patients as sick) at the cost of
+    # slightly lower recall. The tolerance parameter allows a nearby threshold to
+    # win over a marginally better one if it is closer to the preferred value,
+    # providing stability across training runs.
+    
     probs = model.predict(val_ds, verbose=1).flatten()
 
     labels = []
@@ -367,6 +427,7 @@ def find_best_threshold(model, val_ds, preferred_threshold=0.745, tolerance=0.00
     print(f"Validation ROC AUC: {roc_auc:.4f}")
 
     return best_threshold, best_bal_acc, sweep, labels, probs, fprs, tprs, roc_auc
+
 # def find_best_threshold(model, val_ds):
 #     probs = model.predict(val_ds, verbose=1).flatten()
 #
@@ -450,6 +511,7 @@ def save_roc_data(labels, probs, fprs, tprs, roc_auc):
 
 
 def main():
+    # Data preparation: stratified split, dataset pipelines, class weights
     train_paths, train_labels, val_paths, val_labels = stratified_split()
 
     inspect_labels(train_labels, name="Training")
@@ -463,6 +525,7 @@ def main():
 
     class_weight = compute_class_weights(train_labels)
 
+    # Initial stage: Model construction and head training
     model, base = build_model()
     model.summary()
 
@@ -476,13 +539,16 @@ def main():
         verbose=1,
     )
 
+    # Fine-tuning stage: Unfreeze top layers and continue training with a lower learning rate
     fine_tune_model(model, base, train_ds, val_ds, class_weight)
 
+    # Threshold selection, saving and ROC data preparation
     best_threshold, best_bal_acc, sweep, labels, probs, fprs, tprs, roc_auc = find_best_threshold(model, val_ds)
     save_threshold(best_threshold, best_bal_acc)
     save_threshold_sweep(sweep)
     save_roc_data(labels, probs, fprs, tprs, roc_auc)
 
+    # Save the final model (architecture + weights) for later inference and evaluation on the test set
     os.makedirs(MODELS_DIR, exist_ok=True)
     model.export(BASELINE_MODEL_DIR)
     model.save(os.path.join(MODELS_DIR, "baseline.keras"))
@@ -490,6 +556,7 @@ def main():
 
     print(f"\nSaved baseline model to: {BASELINE_MODEL_DIR}")
 
+    # Final evaluation on the test set at default 0.5 threshold by Keras
     results = model.evaluate(test_ds, verbose=1)
     print("Test results:", dict(zip(model.metrics_names, results)))
 
