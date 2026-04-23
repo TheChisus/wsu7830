@@ -5,7 +5,7 @@ import numpy as np
 import tensorflow as tf
 from config import IMG_SIZE, MODELS_DIR, CLASS_NAMES
 
-TFLITE_MODEL_PATH = os.path.join(MODELS_DIR, "int8.tflite")
+TFLITE_MODEL_PATH = os.path.join(MODELS_DIR, "int8.tflite") # INT8 model from 05_quantize_tflite.py
 THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")
 
 
@@ -25,6 +25,11 @@ def load_image(image_path):
 
 
 def quantize_input(image_float, input_details):
+    # Convert a float32 image to the uint8 format expected by the INT8 model.
+
+    # During TFLite INT8 conversion, each tensor is assigned a scale and
+    # zero_point that map float values to the uint8 range [0, 255].
+    # Formula: uint8 = float / scale + zero_point
     scale, zero_point = input_details["quantization"]
 
     if scale == 0:
@@ -36,6 +41,11 @@ def quantize_input(image_float, input_details):
 
 
 def dequantize_output(output_data, output_details):
+    # Convert the INT8 model's uint8 output back to a float32 probability.
+
+    # Inverse of quantize_input: float = scale * (uint8 - zero_point)
+    # If scale == 0 the output was not quantized (e.g., float fallback), so
+    # we cast directly.
     scale, zero_point = output_details["quantization"]
 
     if scale == 0:
@@ -59,18 +69,20 @@ def main():
         print(f"TFLite model not found: {TFLITE_MODEL_PATH}")
         return
 
+    # Same threshold floor logic as 06_predict_image.py
     threshold = 0.745 if load_threshold() < 0.745 else 0.55
 
+    # TFLite inference
     interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
-    interpreter.allocate_tensors()
+    interpreter.allocate_tensors()  # Must be called before get_*_details()
 
     input_details = interpreter.get_input_details()[0]
     output_details = interpreter.get_output_details()[0]
 
     print("TFLite model:", TFLITE_MODEL_PATH)
     print("Threshold Used:", f"{threshold:.3f}")
-    print("Input dtype:", input_details["dtype"])
-    print("Output dtype:", output_details["dtype"])
+    print("Input dtype:", input_details["dtype"])   # Expect uint8 for INT8 model
+    print("Output dtype:", output_details["dtype"]) # Expect uint8 for INT8 model
 
     image_float = load_image(image_path)
 
@@ -78,7 +90,7 @@ def main():
     input_data = quantize_input(image_float, input_details)
 
     interpreter.set_tensor(input_details["index"], input_data)
-    interpreter.invoke()
+    interpreter.invoke()    # Run the model
 
     raw_output = interpreter.get_tensor(output_details["index"])
     prob = float(dequantize_output(raw_output, output_details).flatten()[0])
@@ -86,7 +98,7 @@ def main():
     pred = 1 if prob >= threshold else 0
 
     print("Probability:", f"{prob:.4f}")
-    print("Prediction:", CLASS_NAMES[pred])
+    print("Prediction:", CLASS_NAMES[pred]) # "NORMAL" or "PNEUMONIA"
 
 
 if __name__ == "__main__":
