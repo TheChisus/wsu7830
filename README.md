@@ -1,2 +1,5 @@
 # wsu7830
-Final Project
+
+Machine Learning Final Project
+
+See other ReadME for more information

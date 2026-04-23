@@ -2,17 +2,17 @@
 
 ## Overview
 
-This project implements a **Convolutional Neural Network (CNN)** to classify chest X-ray images into:
+This project implements a **MobileNetV2-based CNN** to classify chest X-ray images into:
 
-* **NORMAL**
-* **PNEUMONIA**
+- **NORMAL**
+- **PNEUMONIA**
 
 The project includes:
 
-* Model training and evaluation
-* Threshold optimization for balanced classification
-* Model quantization to **TFLite (INT8)** for deployment
-* Image prediction using both Keras and TFLite models
+- Model training and evaluation
+- Threshold optimization for balanced classification
+- Model quantization to **TFLite (INT8)** for deployment
+- Image prediction using both Keras and TFLite models
 
 ---
 
@@ -51,11 +51,15 @@ FinalProjCS7830/
 py -3.10 -m venv .venv
 .\.venv\Scripts\activate
 ```
-if you have an error of windows unable to run because running scripts is
-disabled and you are working in powershell. You will need to run this:
-a. Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
-then
-b. Y
+
+> **Windows PowerShell only:** If you get a scripts-disabled error, run:
+>
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+> ```
+>
+> Then press `Y` to confirm.
+
 ### 2. Install Dependencies
 
 ```bash
@@ -84,9 +88,11 @@ python src/02_train_baseline.py
 python src/03_evaluate_baseline.py
 ```
 
-### Step 4: Threshold Optimization
+### Step 4: Threshold Analysis
 
-This step finds the best threshold for **balanced accuracy**
+This step analyzes threshold vs. balanced accuracy on the test set.
+However, the operational threshold is set during Step 2 (training).
+
 ```bash
 python src/04_threshold_analysis.py
 ```
@@ -111,7 +117,7 @@ Example:
 
 ```bash
 python src/06_predict_image.py data/versions/2/chest_xray/chest_xray/test/NORMAL/IM-0001-0001.jpeg
-python src/06_predict_image.py data/versions/2/chest_xray/test/PNEUMONIA/person85_bacteria_423.jpeg
+python src/06_predict_image.py data/versions/2/chest_xray/chest_xray/test/PNEUMONIA/person85_bacteria_423.jpeg
 ```
 
 ---
@@ -126,10 +132,10 @@ python src/07_predict_tflite.py <image_path>
 
 ## Model Performance
 
-* **Accuracy**: ~83%
-* **Recall (Pneumonia)**: ~99%
-* **Balanced Accuracy**: ~90% (after threshold tuning)
-* **AUC**: ~0.96+
+- **Accuracy**: ~83%
+- **Recall (Pneumonia)**: ~99%
+- **Balanced Accuracy**: ~90% (after threshold tuning)
+- **AUC**: ~0.96+
 
 Threshold optimization significantly improved performance on imbalanced data.
 
@@ -137,34 +143,33 @@ Threshold optimization significantly improved performance on imbalanced data.
 
 ## ⚡ Key Features
 
-* CNN-based image classification
-* Threshold tuning for balanced performance
-* ROC and threshold visualization
-* INT8 quantization for lightweight deployment
-* Support for real-time inference (TFLite)
+- CNN-based image classification
+- Threshold tuning for balanced performance
+- ROC and threshold visualization
+- INT8 quantization for lightweight deployment
+- Support for real-time inference (TFLite)
 
 ---
 
 ## Key Concepts Used
 
-* Convolutional Neural Networks (CNN)
-* Binary classification
-* Class imbalance handling
-* Threshold tuning
-* Model quantization (TensorFlow Lite)
+- Convolutional Neural Networks (CNN) — MobileNetV2 architecture
+- Binary classification
+- Class imbalance handling
+- Threshold tuning
+- Model quantization (TensorFlow Lite)
 
 ---
-
 
 ## Tested Environment
 
-* Python 3.10
-* TensorFlow 2.15
-* Windows OS
+- Python 3.10
+- TensorFlow 2.15
+- Windows OS
 
 ---
 
-## 👤 Author
+## 👤 Authors
 
 **Ifedayo Fasakin Olaobi**
 **Chi Asobo Fonkam**
@@ -179,8 +184,8 @@ from **data preprocessing → model training → evaluation → optimization →
 
 It highlights the importance of:
 
-* proper evaluation metrics
-* handling class imbalance
-* optimizing decision thresholds
+- proper evaluation metrics
+- handling class imbalance
+- optimizing decision thresholds
 
 ---
