@@ -45,6 +45,7 @@ def collect_labels_and_probs(model, ds):
 
 
 def evaluate_threshold(labels, probs, threshold):
+    # Compute all classification metrics for a single threshold value
     preds = (probs >= threshold).astype(int)
 
     tp = int(((preds == 1) & (labels == 1)).sum())
@@ -79,7 +80,8 @@ def main():
     print("Class names:", class_names)
 
     labels, probs = collect_labels_and_probs(model, test_ds)
-
+    
+    # Threshold sweep on the TEST set (informational only)
     thresholds = np.linspace(0.10, 0.90, 200)
 
     results = [evaluate_threshold(labels, probs, t) for t in thresholds]
@@ -102,6 +104,10 @@ def main():
     specs = [r["specificity"] for r in results]
     precisions = [r["precision"] for r in results]
 
+    # Plot: metric curves vs threshold
+    # The vertical dashed line marks the threshold that maximises balanced
+    # accuracy on the test set. The trade-off between recall and specificity
+    # is visible where the two curves cross.
     plt.figure(figsize=(8, 5))
     plt.plot(thresholds, bal_accs, label="Balanced Accuracy")
     plt.plot(thresholds, recalls, label="Recall")
